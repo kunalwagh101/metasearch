@@ -1,0 +1,34 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# SQLite database files (your local DB)
+*.db
+
+# Whoosh index folder (if it exists in any older versions)
+whoosh_index/
+
+# Editor / IDE settings
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
