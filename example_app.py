@@ -17,7 +17,7 @@ def main():
     engine = metasearch.Engine(config)
     
     print("=== Initial Search (Lazy Indexing Trigger) ===")
-    initial_results = engine.search("file_name:Approach_.docx")
+    initial_results = engine.search("file_name:Approach")
     if initial_results:
         print("Files found:")
         for result in initial_results:
@@ -33,6 +33,22 @@ def main():
         "description": "Example annotation added for testing."
     })
     
+    sample_file = os.path.join("H:\\trail", "example1.txt")
+    print(f"\n=== Annotating file: {sample_file} ===")
+    # Note: The user can add any annotation keys.
+    engine.annotate(sample_file, {
+        "company": "abc",
+        "description": "This is a description",
+        "value": "554"
+    })
+
+
+    print("\n=== Searching for files with company 'abc' ===")
+    query_company = 'company:"abc"'
+    results_company = engine.search(query_company)
+    for res in results_company:
+        print("Found:", res["file_path"])
+
     # Optionally, add sample_file to the text search plugin index.
     # sample_metadata = engine.get_metadata(sample_file)
     # add_file_to_text_index(sample_metadata)
@@ -85,7 +101,7 @@ def main():
     engine.remove_file(sample_file)
     
     print("\n=== Searching for the Removed File ===")
-    post_removal_results = engine.search(f'"{sample_file}"')  # Exact file path match.
+    post_removal_results = engine.search(f'"{sample_file}"')  
     if post_removal_results:
         print("File still present in index:")
         for res in post_removal_results:

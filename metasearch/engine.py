@@ -6,6 +6,7 @@ from .scanner import scan_directory
 from .extractors import get_extractor_for
 from .storage import Storage
 from .query_engine import QueryEngine
+import datetime
 
 try:
     from .watchers import Watcher
@@ -60,19 +61,15 @@ class Engine:
         return extractor(file_path)
 
     def annotate(self, file_path, metadata_dict):
-        import datetime
         if not os.path.exists(file_path):
-            # Create fallback minimal metadata.
             metadata = {
                 "file_path": file_path,
                 "file_name": os.path.basename(file_path),
                 "size_bytes": 0,
-                "creation_time": datetime.datetime.now().isoformat(),
-                "modification_time": datetime.datetime.now().isoformat(),
+                "created": datetime.datetime.now().isoformat(),
+                "modified": datetime.datetime.now().isoformat(),
                 "extension": str(os.path.splitext(file_path)[1]).lower(),
-                "full_text": "",
-                "actor": "",
-                "description": ""
+                "full_text": ""
             }
         else:
             extractor = get_extractor_for(file_path)

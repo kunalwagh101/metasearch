@@ -24,8 +24,6 @@ class Storage:
             created DATETIME,
             modified DATETIME,
             extension TEXT,
-            actor TEXT,
-            description TEXT,
             full_text TEXT,
             metadata TEXT
         )
@@ -37,34 +35,31 @@ class Storage:
         file_path = file_metadata.get("file_path")
         file_name = os.path.basename(file_path)
         size = file_metadata.get("size_bytes", 0)
-        created = file_metadata.get("creation_time", datetime.now().isoformat())
-        modified = file_metadata.get("modification_time", datetime.now().isoformat())
+        created = file_metadata.get("created", datetime.now().isoformat())
+        modified = file_metadata.get("modified", datetime.now().isoformat())
         extension = str(Path(file_path).suffix).lower()
-        # Get annotation fields, default to empty string.
-        actor = file_metadata.get("actor", "")
-        description = file_metadata.get("description", "")
-        # Combine content: text extracted (if any) plus annotations.
-        full_text = file_metadata.get("full_text", file_metadata.get("content", ""))
-        if actor:
-            full_text += " " + actor
-        if description:
-            full_text += " " + description
+        # Build full_text: start with extracted full_text (if any), and append all annotation key-values
+        base_text = file_metadata.get("full_text", file_metadata.get("content", ""))
+        direct_cols = {"file_path", "file_name", "size_bytes", "created", "modified", "extension", "full_text", "metadata"}
+        extra_text = ""
+        for key, value in file_metadata.items():
+            if key not in direct_cols:
+                extra_text += f" {key}:{value}"
+        full_text = base_text + extra_text
         meta_json = json.dumps(file_metadata)
         query = """
-        INSERT INTO files (file_path, file_name, size_bytes, created, modified, extension, actor, description, full_text, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO files (file_path, file_name, size_bytes, created, modified, extension, full_text, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(file_path) DO UPDATE SET
             file_name=excluded.file_name,
             size_bytes=excluded.size_bytes,
             created=excluded.created,
             modified=excluded.modified,
             extension=excluded.extension,
-            actor=excluded.actor,
-            description=excluded.description,
             full_text=excluded.full_text,
             metadata=excluded.metadata
         """
-        self.conn.execute(query, (file_path, file_name, size, created, modified, extension, actor, description, full_text, meta_json))
+        self.conn.execute(query, (file_path, file_name, size, created, modified, extension, full_text, meta_json))
         self.conn.commit()
     
     def remove_metadata(self, file_path):
@@ -80,33 +75,22 @@ class Storage:
         """
         Convert a simple DSL into a SQL WHERE clause.
         Supported patterns:
-          - key:"value"       --> key LIKE '%value%'
-          - key:[X TO Y]      --> key BETWEEN X AND Y (for numeric or date fields)
-        Tokens separated by AND are combined.
-        If no pattern matches, default to a search in full_text.
+          - For a token in the form key:"value" or key:value:
+              If key is in our direct columns, search that column; otherwise, search in full_text using "key:value".
+          - For range queries: key:[X TO Y]
+          - If token doesn't match any, perform a default search in file_name and full_text.
         """
-        tokens = [token.strip() for token in query_str.split("AND")]
+        direct_columns = {"file_name", "size_bytes", "created", "modified", "extension"}
+        tokens = [t.strip() for t in query_str.split("AND")]
         clauses = []
         params = []
-        
         for token in tokens:
-            m = re.match(r'(\w+):"([^"]+)"', token)
-            if m:
-                key = m.group(1)
-                value = m.group(2)
-                if key in ['actor', 'extension', 'file_name']:
-                    clauses.append(f"{key} LIKE ?")
-                    params.append(f"%{value}%")
-                else:
-                    clauses.append("full_text LIKE ?")
-                    params.append(f"%{value}%")
-                continue
-            m = re.match(r'(\w+):\[(.+?)\s+TO\s*(.*?)\]', token)
-            if m:
-                key = m.group(1)
-                start = m.group(2)
-                end = m.group(3)
-                # For numeric field
+            # Range query: key:[X TO Y]
+            m_range = re.match(r'(\w+):\[(.+?)\s+TO\s*(.*?)\]', token)
+            if m_range:
+                key = m_range.group(1)
+                start = m_range.group(2).strip()
+                end = m_range.group(3).strip()
                 if key == "size_bytes":
                     if not end:
                         clauses.append(f"{key} >= ?")
@@ -115,7 +99,7 @@ class Storage:
                         clauses.append(f"{key} BETWEEN ? AND ?")
                         params.append(float(start))
                         params.append(float(end))
-                elif key in ['created','modified']:
+                elif key in {"created", "modified"}:
                     clauses.append(f"{key} BETWEEN ? AND ?")
                     params.append(start)
                     params.append(end)
@@ -123,8 +107,26 @@ class Storage:
                     clauses.append("full_text LIKE ?")
                     params.append(f"%{token}%")
                 continue
-            # Otherwise default to searching full_text.
-            clauses.append("full_text LIKE ?")
+            
+            # Field query with quotes: key:"value"
+            m_field = re.match(r'(\w+):"([^"]+)"', token)
+            if not m_field:
+                m_field = re.match(r'(\w+):(\S+)', token)
+            if m_field:
+                key = m_field.group(1)
+                value = m_field.group(2)
+                if key in direct_columns:
+                    clauses.append(f"{key} LIKE ?")
+                    params.append(f"%{value}%")
+                else:
+                    # For any other key, search in full_text using the pattern "key:value"
+                    clauses.append("full_text LIKE ?")
+                    params.append(f"%{key}:{value}%")
+                continue
+            
+            # Default: search in file_name and full_text.
+            clauses.append("(file_name LIKE ? OR full_text LIKE ?)")
+            params.append(f"%{token}%")
             params.append(f"%{token}%")
         
         where_clause = " AND ".join(clauses) if clauses else "1"
@@ -136,3 +138,6 @@ class Storage:
         cur = self.conn.execute(query, params)
         rows = cur.fetchall()
         return [dict(row) for row in rows]
+    
+    def search(self, query_str):
+        return self.search_sql(query_str)

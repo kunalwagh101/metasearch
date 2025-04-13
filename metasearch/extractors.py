@@ -8,43 +8,44 @@ import zipfile
 from pathlib import Path
 from datetime import datetime
 
-# Optional encoding detection
+# Optional: use chardet to detect file encoding
 try:
     import chardet
 except ImportError:
     chardet = None
 
-# Global registry for extractor functions (by file extension)
+# Registry of extractor functions keyed by file extension.
 _EXTRACTOR_REGISTRY = {}
 
 def register_extractor(file_extension, extractor_function):
     """
-    Register an extractor function for a specific file extension.
+    Register a custom extractor for a specific file extension.
     """
     _EXTRACTOR_REGISTRY[file_extension.lower()] = extractor_function
 
 def get_extractor_for(file_path):
     """
-    Return the appropriate extractor based on the file's extension.
-    Falls back to extract_generic_metadata.
+    Return the extractor for the file based on its extension;
+    if none is registered, use the generic extractor.
     """
     extension = Path(file_path).suffix.lower()
     return _EXTRACTOR_REGISTRY.get(extension, extract_generic_metadata)
 
 def inherent_metadata(file_path):
     """
-    Extract inherent metadata using pathlib.Path.stat().
-    Always returns a dictionary containing at least "file_path".
+    Extract inherent metadata (using pathlib.Path.stat()).
+    Always returns a dictionary that includes "file_path" and, if possible,
+    "file_name", "size_bytes", "created", "modified", and "access_time".
     """
-    metadata = {"file_path": file_path}  # Always include file_path.
+    metadata = {"file_path": file_path}
     try:
         p = Path(file_path)
         stat_info = p.stat()
         metadata["file_path"] = str(p.resolve())
         metadata["file_name"] = p.name
         metadata["size_bytes"] = stat_info.st_size
-        metadata["creation_time"] = datetime.fromtimestamp(stat_info.st_ctime).isoformat()
-        metadata["modification_time"] = datetime.fromtimestamp(stat_info.st_mtime).isoformat()
+        metadata["created"] = datetime.fromtimestamp(stat_info.st_ctime).isoformat()
+        metadata["modified"] = datetime.fromtimestamp(stat_info.st_mtime).isoformat()
         metadata["access_time"] = datetime.fromtimestamp(stat_info.st_atime).isoformat()
         metadata["owner_uid"] = stat_info.st_uid
         metadata["group_gid"] = stat_info.st_gid
@@ -54,13 +55,11 @@ def inherent_metadata(file_path):
     return metadata
 
 # --------------------
-# Specific Extractors
+# Specific extractors follow.
+# These add type-specific metadata to the inherent metadata.
 # --------------------
 
 def extract_image_metadata(file_path):
-    """
-    Extract metadata for images using Pillow and ExifRead.
-    """
     metadata = inherent_metadata(file_path)
     metadata["file_type"] = "image"
     try:
@@ -80,9 +79,6 @@ def extract_image_metadata(file_path):
     return metadata
 
 def extract_audio_metadata(file_path):
-    """
-    Extract metadata for audio files using Mutagen.
-    """
     metadata = inherent_metadata(file_path)
     metadata["file_type"] = "audio"
     try:
@@ -103,9 +99,6 @@ def extract_audio_metadata(file_path):
     return metadata
 
 def extract_video_metadata(file_path):
-    """
-    Extract metadata for video files using ffprobe.
-    """
     metadata = inherent_metadata(file_path)
     metadata["file_type"] = "video"
     try:
@@ -128,9 +121,6 @@ def extract_video_metadata(file_path):
     return metadata
 
 def extract_pdf_metadata(file_path):
-    """
-    Extract metadata for PDF files using PyMuPDF (fitz).
-    """
     metadata = inherent_metadata(file_path)
     metadata["file_type"] = "pdf"
     try:
@@ -147,9 +137,6 @@ def extract_pdf_metadata(file_path):
     return metadata
 
 def extract_docx_metadata(file_path):
-    """
-    Extract metadata for DOCX files using python-docx.
-    """
     metadata = inherent_metadata(file_path)
     metadata["file_type"] = "docx"
     try:
@@ -168,9 +155,6 @@ def extract_docx_metadata(file_path):
     return metadata
 
 def extract_xlsx_metadata(file_path):
-    """
-    Extract metadata for XLSX files using openpyxl.
-    """
     metadata = inherent_metadata(file_path)
     metadata["file_type"] = "xlsx"
     try:
@@ -184,9 +168,6 @@ def extract_xlsx_metadata(file_path):
     return metadata
 
 def extract_pptx_metadata(file_path):
-    """
-    Extract metadata for PPTX files using python-pptx.
-    """
     metadata = inherent_metadata(file_path)
     metadata["file_type"] = "pptx"
     try:
@@ -204,9 +185,6 @@ def extract_pptx_metadata(file_path):
     return metadata
 
 def extract_text_metadata(file_path):
-    """
-    Extract metadata for text files by reading their content.
-    """
     metadata = inherent_metadata(file_path)
     metadata["file_type"] = "text"
     try:
@@ -227,9 +205,6 @@ def extract_text_metadata(file_path):
     return metadata
 
 def extract_archive_metadata(file_path):
-    """
-    Extract metadata for archive files by listing contained files.
-    """
     metadata = inherent_metadata(file_path)
     metadata["file_type"] = "archive"
     archive_list = []
@@ -249,16 +224,11 @@ def extract_archive_metadata(file_path):
     return metadata
 
 def extract_generic_metadata(file_path):
-    """
-    Generic extractor for unknown file types.
-    """
     metadata = inherent_metadata(file_path)
     metadata["file_type"] = "binary"
     return metadata
 
-# ------------------------------------
-# Register extractors based on file extension.
-# ------------------------------------
+# Register extractors for common file types.
 for ext in [".jpg", ".jpeg", ".png", ".gif", ".tiff"]:
     register_extractor(ext, extract_image_metadata)
 for ext in [".mp3", ".flac", ".ogg", ".m4a"]:
