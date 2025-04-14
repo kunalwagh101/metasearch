@@ -8,13 +8,13 @@ import zipfile
 from pathlib import Path
 from datetime import datetime
 
-# Optional: use chardet to detect file encoding
+
 try:
     import chardet
 except ImportError:
     chardet = None
 
-# Registry of extractor functions keyed by file extension.
+
 _EXTRACTOR_REGISTRY = {}
 
 def register_extractor(file_extension, extractor_function):
@@ -54,10 +54,6 @@ def inherent_metadata(file_path):
         metadata["inherent_error"] = str(e)
     return metadata
 
-# --------------------
-# Specific extractors follow.
-# These add type-specific metadata to the inherent metadata.
-# --------------------
 
 def extract_image_metadata(file_path):
     metadata = inherent_metadata(file_path)

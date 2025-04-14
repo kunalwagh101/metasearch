@@ -36,15 +36,18 @@ class Engine:
     
     def _trigger_index_for_new_dirs(self):
         """
-        Normalize each directory in config.scan_paths and compare to indexed_dirs.
-        If a directory is not indexed (status == 'completed'), index it.
+        Compares each directory in config.scan_paths (normalized) with those in the indexed_dirs table.
+        Indexes any directory that is not already marked as 'completed'.
         """
+       
+        normalized_paths = {str(Path(directory).resolve()) for directory in self.config.scan_paths} 
         indexed_dirs = self.storage.get_indexed_directories()
-        for directory in self.config.scan_paths:
-            norm_dir = str(Path(directory).resolve())
+        
+        for norm_dir in normalized_paths:
             if norm_dir not in indexed_dirs:
                 print(f"New or incomplete directory detected: {norm_dir}. Indexing...")
                 self.index_directory(norm_dir)
+               
                 self.storage.add_indexed_directory(norm_dir, status="completed")
     
     def index_directory(self, directory):
@@ -67,80 +70,117 @@ class Engine:
             print(f"Error processing {file_path}: {e}")
     
     def search(self, query_str):
-        if self.config.lazy_indexing:
-            if self._is_metadata_empty():
-                print("Metadata store is empty. Triggering full indexing...")
-                self.index_all_directories()
-            else:
-                self._trigger_index_for_new_dirs()
-        result =[]
-        for contain in self.query_engine.search(query_str) :
-            result.append(contain["file_path"])
-
-        return result
+        """
+        First, check the database for results matching the query.
+        If results exist, return them immediately.
+        Otherwise, trigger indexing for new/incomplete directories and then re-run the query.
+        """
+        results = self.query_engine.search(query_str)
+        if results and len(results) > 0:
+            ans  = []
+            for contain in results :
+                ans.append(contain['file_path'])
+            return ans
+        
+        self._trigger_index_for_new_dirs()
+        finally_results = []
+        for contain in  self.query_engine.search(query_str) :
+                finally_results.append(contain['file_path'])
+        return finally_results
     
     def search_first_match(self, query_str):
         """
-        Incrementally index files and stop when a match is found.
-        For each file in every configured directory (if not yet fully indexed),
-        index the file and then restrict the search to that file only.
-        As soon as a match is found, return that file's metadata.
+        First checks the database for a matching file.
+        If none are found, it then triggers incremental indexing of directories,
+        and after each file is processed, it tests if that file matches the query.
+        As soon as a match is found, it returns that file's metadata.
         """
-        # Ensure directories are processed incrementally.
-        if self.config.lazy_indexing:
-            if self._is_metadata_empty():
-                # If no files are indexed, process each directory one-by-one.
-                for directory in self.config.scan_paths:
-                    norm_dir = str(Path(directory).resolve())
-                    for file_path in scan_directory(norm_dir):
-                        try:
-                            metadata = get_extractor_for(file_path)(file_path)
-                            self.storage.save_metadata(metadata)
-                            # Check if this file matches the query by restricting to its file_path.
-                            test_query = f'file_name:"{os.path.basename(file_path)}" AND {query_str}'
-                            res = self.storage.search_sql(test_query)
-                            if res:
-                                print(f"Early match found: {file_path}")
-                                return res[0]
-                        except Exception as e:
-                            print(f"Error processing {file_path}: {e}")
-                    self.storage.add_indexed_directory(norm_dir, status="completed")
-            else:
-                for directory in self.config.scan_paths:
-                    norm_dir = str(Path(directory).resolve())
-                    for file_path in scan_directory(norm_dir):
-                        try:
-                            metadata = get_extractor_for(file_path)(file_path)
-                            self.storage.save_metadata(metadata)
-                            test_query = f'file_name:"{os.path.basename(file_path)}" AND {query_str}'
-                            res = self.storage.search_sql(test_query)
-                            if res:
-                                print(f"Early match found: {file_path}")
-                                return res[0]
-                        except Exception as e:
-                            print(f"Error processing {file_path}: {e}")
-                    self.storage.add_indexed_directory(norm_dir, status="completed")
+        results = self.query_engine.search(query_str)
+        if results and len(results) > 0:
+            return results[0]['file_path']
+        
+        
+        for directory in self.config.scan_paths:
+            norm_dir = str(Path(directory).resolve())
+            for file_path in scan_directory(norm_dir):
+                try:
+                    metadata = get_extractor_for(file_path)(file_path)
+                    self.storage.save_metadata(metadata)
+                   
+                    test_query = f'file_name:"{os.path.basename(file_path)}" AND {query_str}'
+                    res = self.storage.search_sql(test_query)
+                    if res and len(res) > 0:
+                        print(f"Early match found: {file_path}")
+                        return res[0]['file_path']
+                except Exception as e:
+                    print(f"Error processing {file_path}: {e}")
+           
+            self.storage.add_indexed_directory(norm_dir, status="completed")
         return None
 
     def get_metadata(self, file_path):
-        extractor = get_extractor_for(file_path)
-        return extractor(file_path)
+        """
+        Returns the metadata stored in the database for the given file_path.
+        """
+        return self.storage.get_metadata(os.path.abspath(file_path))
     
     def annotate(self, file_path, metadata_dict):
+        """
+        Annotate a file with user-supplied metadata.
+        1. If the file exists, extract its metadata (or retrieve from DB) and update it.
+        2. If the file does not exist, create it, generate minimal metadata, and then update.
+        After updating, ensure custom annotations are appended to the "full_text" field.
+        """
+        import datetime
+        from pathlib import Path
+
+        file_path = os.path.abspath(file_path)
+
         if not os.path.exists(file_path):
-            metadata = {
-                "file_path": file_path,
-                "file_name": os.path.basename(file_path),
-                "size_bytes": 0,
-                "created": datetime.datetime.now().isoformat(),
-                "modified": datetime.datetime.now().isoformat(),
-                "extension": str(os.path.splitext(file_path)[1]).lower(),
-                "full_text": ""
-            }
+            parent_dir = os.path.dirname(file_path)
+            if not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+            Path(file_path).touch()
+            print(f"File did not exist; created empty file at: {file_path}")
+        
+    
+        existing_metadata = self.storage.get_metadata(file_path)
+        if existing_metadata is None:
+            try:
+                extractor = get_extractor_for(file_path)
+                metadata = extractor(file_path)
+            except Exception as e:
+                print(f"Metadata extraction failed; using fallback. Reason: {e}")
+                now = datetime.datetime.now().isoformat()
+                metadata = {
+                    "file_path": file_path,
+                    "file_name": os.path.basename(file_path),
+                    "size_bytes": os.path.getsize(file_path),
+                    "created": now,
+                    "modified": now,
+                    "access_time": now,
+                    "owner_uid": 0,
+                    "group_gid": 0,
+                    "permissions": oct(os.stat(file_path).st_mode),
+                    "file_type": "text",
+                    "full_text": ""
+                }
         else:
-            extractor = get_extractor_for(file_path)
-            metadata = extractor(file_path)
+            metadata = existing_metadata
+
         metadata.update(metadata_dict)
+        current_text = metadata.get("full_text", "")
+        for key, value in metadata_dict.items():
+            pair = f"{key}:{value}"
+          
+            if pair.lower() not in current_text.lower():
+                if current_text:
+                    current_text += " " + pair
+                else:
+                    current_text = pair
+        metadata["full_text"] = current_text.strip()
+
+       
         self.storage.save_metadata(metadata)
         print(f"Annotated: {file_path}")
     

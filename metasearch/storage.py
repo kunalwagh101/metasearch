@@ -40,7 +40,7 @@ class Storage:
         self.conn.commit()
     
     def add_indexed_directory(self, dir_path, status="completed"):
-        # Normalize directory path
+    
         normalized = str(Path(dir_path).resolve())
         now = datetime.now().isoformat()
         query = "INSERT OR REPLACE INTO indexed_dirs (dir_path, status, last_indexed_at) VALUES (?, ?, ?)"
@@ -48,7 +48,7 @@ class Storage:
         self.conn.commit()
     
     def get_indexed_directories(self):
-        # Return a set of normalized directory paths that are marked "completed".
+        
         query = "SELECT dir_path FROM indexed_dirs WHERE status = 'completed'"
         cur = self.conn.execute(query)
         rows = cur.fetchall()
@@ -100,16 +100,15 @@ class Storage:
         - field:"value" or field:value for standard direct columns (file_name, size_bytes, created, modified, extension)
         - Range queries: field:[X TO Y]
         - Otherwise, search in file_name and full_text.
-        For keys that are not defined as direct columns, the query will search in full_text for a substring that contains both the key and value.
+        For keys that are not direct columns, the query will search in full_text for the pattern "key:value"
         """
-        # Define direct columns that we store in dedicated fields.
         direct_columns = {"file_name", "size_bytes", "created", "modified", "extension"}
         tokens = [t.strip() for t in query_str.split("AND")]
         clauses = []
         params = []
-        
+        import re
         for token in tokens:
-            # Check for range queries: e.g. size_bytes:[X TO Y]
+          
             m_range = re.match(r'(\w+):\[(.+?)\s+TO\s*(.*?)\]', token)
             if m_range:
                 key = m_range.group(1)
@@ -131,11 +130,9 @@ class Storage:
                     clauses.append("full_text LIKE ?")
                     params.append(f"%{token}%")
                 continue
-
-            # Check for a field query with quotes: field:"value"
+           
             m_field = re.match(r'(\w+):"([^"]+)"', token)
             if not m_field:
-                # Or without quotes: field:value
                 m_field = re.match(r'(\w+):(\S+)', token)
             if m_field:
                 key = m_field.group(1)
@@ -144,18 +141,14 @@ class Storage:
                     clauses.append(f"{key} LIKE ?")
                     params.append(f"%{value}%")
                 else:
-                    # Instead of requiring an exact match, 
-                    # we allow any characters between the key and value.
+                    
                     clauses.append("full_text LIKE ?")
-                    # For example, this produces: "%author%Kunal Wagh%"
-                    params.append(f"%{key}%{value}%")
+                    params.append(f"%{key}:{value}%")
                 continue
-
-            # Default fallback: search in file_name OR full_text.
+            
             clauses.append("(file_name LIKE ? OR full_text LIKE ?)")
             params.append(f"%{token}%")
             params.append(f"%{token}%")
-        
         where_clause = " AND ".join(clauses) if clauses else "1"
         return where_clause, params
 
@@ -169,3 +162,22 @@ class Storage:
     
     def search(self, query_str):
         return self.search_sql(query_str)
+    
+    def get_metadata(self, file_path):
+        """
+        Retrieve metadata for a given file_path from the database.
+        Returns a dictionary if found, else None.
+        """
+        query = "SELECT metadata FROM files WHERE file_path = ? LIMIT 1"
+        cur = self.conn.execute(query, (file_path,))
+        row = cur.fetchone()
+        if row:
+            try:
+                return json.loads(row["metadata"])
+            except Exception as e:
+                print(f"[WARN] Error decoding metadata for {file_path}: {e}")
+                return None
+        else:
+            return None
+
+
