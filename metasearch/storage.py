@@ -12,10 +12,10 @@ class Storage:
         self.db_path = db_path
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
-        self._create_table()
+        self._create_tables()
     
-    def _create_table(self):
-        query = """
+    def _create_tables(self):
+        query_files = """
         CREATE TABLE IF NOT EXISTS files (
             id INTEGER PRIMARY KEY,
             file_path TEXT UNIQUE,
@@ -28,8 +28,31 @@ class Storage:
             metadata TEXT
         )
         """
-        self.conn.execute(query)
+        self.conn.execute(query_files)
+        query_dirs = """
+        CREATE TABLE IF NOT EXISTS indexed_dirs (
+            dir_path TEXT PRIMARY KEY,
+            status TEXT CHECK(status IN ('completed', 'incomplete')) NOT NULL DEFAULT 'incomplete',
+            last_indexed_at TEXT
+        )
+        """
+        self.conn.execute(query_dirs)
         self.conn.commit()
+    
+    def add_indexed_directory(self, dir_path, status="completed"):
+        # Normalize directory path
+        normalized = str(Path(dir_path).resolve())
+        now = datetime.now().isoformat()
+        query = "INSERT OR REPLACE INTO indexed_dirs (dir_path, status, last_indexed_at) VALUES (?, ?, ?)"
+        self.conn.execute(query, (normalized, status, now))
+        self.conn.commit()
+    
+    def get_indexed_directories(self):
+        # Return a set of normalized directory paths that are marked "completed".
+        query = "SELECT dir_path FROM indexed_dirs WHERE status = 'completed'"
+        cur = self.conn.execute(query)
+        rows = cur.fetchall()
+        return {row["dir_path"] for row in rows}
     
     def save_metadata(self, file_metadata):
         file_path = file_metadata.get("file_path")
@@ -38,12 +61,11 @@ class Storage:
         created = file_metadata.get("created", datetime.now().isoformat())
         modified = file_metadata.get("modified", datetime.now().isoformat())
         extension = str(Path(file_path).suffix).lower()
-        # Build full_text: start with extracted full_text (if any), and append all annotation key-values
         base_text = file_metadata.get("full_text", file_metadata.get("content", ""))
-        direct_cols = {"file_path", "file_name", "size_bytes", "created", "modified", "extension", "full_text", "metadata"}
+        direct_keys = {"file_path", "file_name", "size_bytes", "created", "modified", "extension", "full_text", "metadata"}
         extra_text = ""
         for key, value in file_metadata.items():
-            if key not in direct_cols:
+            if key not in direct_keys:
                 extra_text += f" {key}:{value}"
         full_text = base_text + extra_text
         meta_json = json.dumps(file_metadata)
@@ -75,17 +97,19 @@ class Storage:
         """
         Convert a simple DSL into a SQL WHERE clause.
         Supported patterns:
-          - For a token in the form key:"value" or key:value:
-              If key is in our direct columns, search that column; otherwise, search in full_text using "key:value".
-          - For range queries: key:[X TO Y]
-          - If token doesn't match any, perform a default search in file_name and full_text.
+        - field:"value" or field:value for standard direct columns (file_name, size_bytes, created, modified, extension)
+        - Range queries: field:[X TO Y]
+        - Otherwise, search in file_name and full_text.
+        For keys that are not defined as direct columns, the query will search in full_text for a substring that contains both the key and value.
         """
+        # Define direct columns that we store in dedicated fields.
         direct_columns = {"file_name", "size_bytes", "created", "modified", "extension"}
         tokens = [t.strip() for t in query_str.split("AND")]
         clauses = []
         params = []
+        
         for token in tokens:
-            # Range query: key:[X TO Y]
+            # Check for range queries: e.g. size_bytes:[X TO Y]
             m_range = re.match(r'(\w+):\[(.+?)\s+TO\s*(.*?)\]', token)
             if m_range:
                 key = m_range.group(1)
@@ -107,10 +131,11 @@ class Storage:
                     clauses.append("full_text LIKE ?")
                     params.append(f"%{token}%")
                 continue
-            
-            # Field query with quotes: key:"value"
+
+            # Check for a field query with quotes: field:"value"
             m_field = re.match(r'(\w+):"([^"]+)"', token)
             if not m_field:
+                # Or without quotes: field:value
                 m_field = re.match(r'(\w+):(\S+)', token)
             if m_field:
                 key = m_field.group(1)
@@ -119,19 +144,22 @@ class Storage:
                     clauses.append(f"{key} LIKE ?")
                     params.append(f"%{value}%")
                 else:
-                    # For any other key, search in full_text using the pattern "key:value"
+                    # Instead of requiring an exact match, 
+                    # we allow any characters between the key and value.
                     clauses.append("full_text LIKE ?")
-                    params.append(f"%{key}:{value}%")
+                    # For example, this produces: "%author%Kunal Wagh%"
+                    params.append(f"%{key}%{value}%")
                 continue
-            
-            # Default: search in file_name and full_text.
+
+            # Default fallback: search in file_name OR full_text.
             clauses.append("(file_name LIKE ? OR full_text LIKE ?)")
             params.append(f"%{token}%")
             params.append(f"%{token}%")
         
         where_clause = " AND ".join(clauses) if clauses else "1"
         return where_clause, params
-    
+
+
     def search_sql(self, query_str):
         where_clause, params = self.parse_query(query_str)
         query = f"SELECT * FROM files WHERE {where_clause} LIMIT 20"

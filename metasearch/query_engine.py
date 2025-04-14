@@ -8,3 +8,4 @@ class QueryEngine:
 
     def search(self, query_str):
         return self.storage.search_sql(query_str)
+    
