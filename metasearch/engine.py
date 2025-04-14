@@ -117,6 +117,48 @@ class Engine:
            
             self.storage.add_indexed_directory(norm_dir, status="completed")
         return None
+    
+    def search_by_size(self, min_size, max_size=None):
+        """
+        Search for files by size (in bytes).
+        Use DSL: size_bytes:[min_size TO max_size] if max_size provided,
+        else size_bytes:[min_size TO ]
+        """
+        if max_size is None:
+            query = f"size_bytes:[{min_size} TO ]"
+        else:
+            query = f"size_bytes:[{min_size} TO {max_size}]"
+        results = self.search(query)
+        if not results and self.config.lazy_indexing:
+            self._trigger_index_for_new_dirs()
+            results = self.search(query)
+        return results
+
+    def search_by_time(self, field, seconds):
+        """
+        Search for files by a time field ('created' or 'modified') using a time window defined in seconds.
+        This method finds files that have been updated/created in the last 'seconds' seconds.
+        
+        :param field: A string, either "created" or "modified"
+        :param seconds: An integer representing the time window in seconds.
+        :return: A list of metadata dictionaries of matching files.
+        """
+        if field not in {"created", "modified"}:
+            raise ValueError("Field must be either 'created' or 'modified'")
+        
+        import datetime
+        now = datetime.datetime.now()
+        start = now - datetime.timedelta(seconds=seconds)
+        
+
+        query = f"{field}:[{start.isoformat()} TO {now.isoformat()}]"
+        
+        results = self.search(query)
+        if not results and self.config.lazy_indexing:
+            self._trigger_index_for_new_dirs()
+            results = self.search(query)
+        return results
+
 
     def get_metadata(self, file_path):
         """

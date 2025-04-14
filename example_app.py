@@ -58,8 +58,6 @@ def main():
     })
 
 
-    # result = engine.search('company:"abc"')
-    # print("Search returned:", result)
     result_first = engine.search_first_match('company:"abc"')
     print("Search First Match returned:", result_first)
 
@@ -77,8 +75,7 @@ def main():
         print("Found:", res)
 
     
-    
-    
+  
     
     # 4. Search for files modified in the last 5 hours.
     print("\n=== Searching for files updated in the last 5 hours ===")
@@ -99,18 +96,28 @@ def main():
 
    
     print("\n=== Searching for files > 5 MB ===")
-    five_mb = 5 * 1048576  # 5 MB in bytes
+    five_mb = 2 * 1048576  # 5 MB in bytes
     query_size_gt = f"size_bytes:[{five_mb + 1} TO ]"
     results_size_gt = engine.search(query_size_gt)
 
     print("File > 5MB:", "Size:", results_size_gt)
     
-    # 3. Search for files smaller than 5 MB.
+ 
     print("\n=== Searching for files < 5 MB ===")
     query_size_lt = f"size_bytes:[0 TO {five_mb}]"
     results_size_lt = engine.search(query_size_lt)
     for res in results_size_lt:
         print("File < 5MB:", res, "Size:", res)
+
+
+    two_mb = 2 * 1024 * 1024  # 2 MB in bytes
+    print("\n=== Searching for files < 2 MB ===")
+    size_results = engine.search_by_size(0, two_mb)
+    if size_results:
+        for f in size_results:
+            print("Found file:", f, "Size:")
+    else:
+        print("No files found in size range.")
 
 
 
@@ -142,7 +149,7 @@ def main():
     
     # Update the index manually.
     # print("\n=== Updating Index for Directory H:\\trail ===")
-    # engine.update_index("H:\Aganitha")
+    
     
     # # --- Search Query Examples ---
     # # 1. Search for files with actor "abc".
