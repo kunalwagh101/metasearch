@@ -8,12 +8,12 @@ import metasearch
 def main():
     # current_path = Path.cwd().parent
   
-    config = agasearch.Config(
+    config = metasearch.Config(
         scan_paths=["H:\\trail","H:\exam","H:\job"],
         
     )
     
-    engine = agasearch.Engine(config)
+    engine = metasearch.Engine(config)
     result = engine.search_first_match('producer:"Microsoft: Print To PDF"')
     if result:
         print("Found:", result)

@@ -11,10 +11,14 @@ Whether you're managing documents, auditing file systems, or just need a better 
 To install MetaSearch from **TestPyPI**, use the following command:
 
 ```bash
-pip install --index-url https://test.pypi.org/simple/ --extra-index-url 
-https://pypi.org/simple agasearch
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple agasearch
 ```
 
+or use 
+
+```bash
+pip install --extra-index-url https://test.pypi.org/simple/ metasearch
+```
 > ⚠️ The `--no-deps` flag is used to skip dependency resolution from TestPyPI. Install dependencies separately if needed.
 
 ---
@@ -120,6 +124,14 @@ Find files within a size range.
 results = engine.search_by_size(0, 2 * 1024 * 1024)  # Files < 2MB
 ```
 
+### 📏 `search_by_time(type, seconds)`
+Find files within a size range.
+
+```python
+    results = engine.search_by_time("modified", 3600)  # Files < 2MB
+```
+
+
 ---
 
 ## 🧪 Full Example
@@ -182,6 +194,14 @@ def main():
     size_results = engine.search_by_size(0, two_mb)
     for r in size_results:
         print("File < 2MB:", r)
+
+    results = engine.search_by_time("modified", 3600)
+    
+    if results:
+        for file_meta in results:
+            print("Modified files found:", file_meta)
+    else:
+        print("No files found in the given time range.")
 
     # Remove from index
     engine.remove_file(sample_file)
