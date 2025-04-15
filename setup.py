@@ -1,18 +1,16 @@
 from setuptools import setup, find_packages
 import os
 
-# Read the contents of your README file
-here = os.path.abspath(os.path.dirname(__file__))
-with open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
-    long_description = f.read()
+# # Read the contents of your README file
+# here = os.path.abspath(os.path.dirname(__file__))
+# with open("README.md", "r", encoding="utf-8") as fh:
+#     long_description = fh.read()
 
 setup(
-    name="metasearch",
-    version="0.4.2",
-    description="A file management and metadata search library.",
-    long_description=long_description,
-    long_description_content_type="text/markdown",  # Change to "text/x-rst" if you use reStructuredText
-    author="Your Name",
+    name="agasearch",
+    version="0.8.7",
+    description="A file management and metadata search library.",  # Change to "text/x-rst" if you use reStructuredText
+    author="Kunal wagh",
     author_email="your.email@example.com",
     url="https://github.com/yourusername/metasearch",
     packages=find_packages(),
