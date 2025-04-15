@@ -226,17 +226,9 @@ add_file_to_text_index(meta)
 
 ---
 
-## 🧾 License
 
-MIT License
 
----
 
-## 👨‍💻 Author
 
-**Your Name**  
-Email: your.email@example.com  
-GitHub: [yourusername](https://github.com/kunalwagh101/metasearch.git)
 
----
 
