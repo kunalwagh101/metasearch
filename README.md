@@ -17,7 +17,7 @@ pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://
 or use 
 
 ```bash
-pip install --extra-index-url https://test.pypi.org/simple/ metasearch
+pip install --extra-index-url https://test.pypi.org/simple/ agasearch
 ```
 > ⚠️ The `--no-deps` flag is used to skip dependency resolution from TestPyPI. Install dependencies separately if needed.
 
