@@ -49,7 +49,17 @@ config = metasearch.Config(
 
 engine = metasearch.Engine(config)
 ```
+advance config options:
 
+```python
+ config = metasearch.Config(
+        scan_paths=["H:\\trail"],
+        enable_watchdog=False,   # Change to True to enable real-time monitoring if desired.
+        db_path="metasearch.db",
+        lazy_indexing=True
+    )
+
+```
 ### 2. Searching Files
 
 #### 🔍 Search by file metadata
